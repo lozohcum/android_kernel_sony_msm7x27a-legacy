@@ -66,3 +66,6 @@ js-rtc-y = rtc.o
 
 obj-$(CONFIG_MSM_ROTATOR)	+= msm_rotator.o
 obj-$(CONFIG_MMC_GENERIC_CSDIO)	+= csdio.o
+#/* MTD-BSP-AlwaysChen-NVRESTORE-01+[ */
+obj-y                           += smem_io.o
+#/* MTD-BSP-AlwaysChen-NVRESTORE-01+] */

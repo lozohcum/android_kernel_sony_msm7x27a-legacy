@@ -1,7 +1,8 @@
 /*
    BlueZ - Bluetooth protocol stack for Linux
    Copyright (c) 2000-2001, 2010-2012, Code Aurora Forum. All rights reserved.
-
+   Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
+   
    Written 2000,2001 by Maxim Krasnyansky <maxk@qualcomm.com>
 
    This program is free software; you can redistribute it and/or modify
@@ -1973,8 +1974,52 @@ static inline void hci_remote_features_evt(struct hci_dev *hdev, struct sk_buff 
 	} else  if (!(lmp_ssp_capable(conn)) && conn->auth_initiator &&
 		(conn->pending_sec_level == BT_SECURITY_HIGH)) {
 		conn->pending_sec_level = BT_SECURITY_MEDIUM;
-	}
+	//MTD-Conn-JC-BDR-Force-master+[	
+    } else {
+				/**Broadcom**/
+				/* 	Check 'remote supported features'                            
+				 * 	Refer to BT spec volume 2 - 3.3 FEATURE MASK DEFINITION
+				 * 	Byte3, bit1 and bit2 for Enhanced Data Rate feature        
+				 * 	Only force to master while remote is a BDR device
+				 */
+				if (!(conn->features[3] & (0x02|0x04)))
+				{
+					// not support 2M/3M EDR
+					/* 	Force Master role in this link
+					 *	If we are slave, request to switch role
+					 *  If we are master, disable role switch feature
+					 */
+					if (!(conn->link_mode) & HCI_LM_MASTER)
+					{
+						// act as slave
+						if (!test_and_set_bit(HCI_CONN_RSWITCH_PEND,
+									&conn->pend))
+						{
+							struct hci_cp_switch_role cp;
+						
+							bacpy(&cp.bdaddr, &conn->dst);
+							cp.role = 0x0;
+							BT_ERR("[JC]switch to master");
+							hci_send_cmd(conn->hdev, HCI_OP_SWITCH_ROLE,
+									sizeof(cp), &cp);
+						}
+					}
+					else {
+						struct hci_cp_write_link_policy cp;
 
+						cp.handle = cpu_to_le16(conn->handle);
+						conn->link_policy |= HCI_LP_SNIFF;
+						conn->link_policy |= HCI_LP_HOLD;
+						conn->link_policy &= ~HCI_LP_RSWITCH;
+						cp.policy = cpu_to_le16(conn->link_policy);
+						BT_ERR("[JC]disable role switch.");
+						hci_send_cmd(conn->hdev, HCI_OP_WRITE_LINK_POLICY,
+								sizeof(cp), &cp);
+					}
+				}
+				/****/
+	}
+	//MTD-Conn-JC-BDR-Force-master+]
 	if (!ev->status) {
 		struct hci_cp_remote_name_req cp;
 		memset(&cp, 0, sizeof(cp));
@@ -2351,12 +2396,31 @@ static inline void hci_role_change_evt(struct hci_dev *hdev, struct sk_buff *skb
 
 	conn = hci_conn_hash_lookup_ba(hdev, ACL_LINK, &ev->bdaddr);
 	if (conn) {
-		if (!ev->status) {
-			if (ev->role)
+		//MTD-Conn-JC-BDR-Force-master*[
+		if (!ev->status) {//status 0 indicate success
+			if (ev->role){
 				conn->link_mode &= ~HCI_LM_MASTER;
-			else
-				conn->link_mode |= HCI_LM_MASTER;
-		}
+			}else {
+				 conn->link_mode |= HCI_LM_MASTER;
+			     /**Broadcom**/
+			     if (!(conn->features[3] & (0x02|0x04)))
+			     {
+				     // when not support 2M/3M EDR
+				     // disable role switch after changed to master
+				     struct hci_cp_write_link_policy cp;
+
+				     cp.handle = cpu_to_le16(conn->handle);
+				     conn->link_policy |= HCI_LP_SNIFF;
+				     conn->link_policy |= HCI_LP_HOLD;
+				     conn->link_policy &= ~HCI_LP_RSWITCH;
+				     cp.policy = cpu_to_le16(conn->link_policy);
+				     BT_ERR("[JC]disable role switch.");
+				     hci_send_cmd(conn->hdev, HCI_OP_WRITE_LINK_POLICY,
+							sizeof(cp), &cp);
+			    }
+		    }
+		    //MTD-Conn-JC-BDR-Force-master*]
+         }
 
 		clear_bit(HCI_CONN_RSWITCH_PEND, &conn->pend);
 

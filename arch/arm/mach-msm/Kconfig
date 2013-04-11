@@ -22,7 +22,7 @@ config ARCH_MSM7X25
 config ARCH_MSM7X27
 	bool "MSM7x27"
 	select ARCH_MSM_ARM11 if MSM_SOC_REV_NONE
-	select ARCH_HAS_BARRIERS if MSM_SOC_REV_NONE
+	select ARCH_HAS_BARRIERS
 	select ARCH_MSM_CORTEX_A5 if MSM_SOC_REV_A
 	select MSM_VIC
 	select CPU_V6 if MSM_SOC_REV_NONE
@@ -33,7 +33,6 @@ config ARCH_MSM7X27
 	select MULTI_IRQ_HANDLER
 	select MSM_PROC_COMM_REGULATOR
 	select CLEANCACHE
-	select QCACHE
 	select MSM_PM2 if PM
 
 config ARCH_MSM7X30
@@ -1293,7 +1292,7 @@ config MSM_RPC_OEM_RAPI
 
 config MSM_RPCSERVER_HANDSET
 	depends on MSM_ONCRPCROUTER
-	default y
+	default n
 	bool "Handset events RPC server"
 	help
 	  Support for receiving handset events like headset detect,

@@ -2,6 +2,7 @@
  * Driver O/S-independent utility routines
  *
  * Copyright (C) 1999-2011, Broadcom Corporation
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  * 
  *         Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -1592,6 +1593,9 @@ static const char *crypto_algo_names[] = {
 	"UNDEF",
 	"UNDEF",
 	"UNDEF",
+#ifdef BCMWAPI_WPI
+	"WAPI",
+#endif /* BCMWAPI_WPI */
 	"UNDEF"
 };
 

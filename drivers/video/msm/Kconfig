@@ -35,6 +35,12 @@ config FB_MSM_TRIPLE_BUFFER
 	bool "Support for triple frame buffer"
 	default n
 
+config FIH_FB_MSM_BACKLIGHT_CONTROL
+	bool "Support for conrol backlight on after flash"
+	default n
+	---help---
+	  Turn on backlight after showing first frame when on.
+
 choice
 	prompt "MDP HW version"
 	default FB_MSM_MDP22
@@ -170,6 +176,23 @@ config FB_MSM_MIPI_DSI_NOVATEK
         select FB_MSM_MIPI_DSI
         default n
 
+config FB_MSM_MIPI_DSI_ILITEK
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
+
+# FIH-SW-MM-VH-DISPLAY-00+[
+config FB_MSM_MIPI_DSI_RENESAS_HVGA
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
+# FIH-SW-MM-VH-DISPLAY-00+]
+
+config FB_MSM_MIPI_DSI_ORISE
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
+        
 config FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
 	bool
 	select FB_MSM_MIPI_DSI
@@ -179,6 +202,18 @@ config FB_MSM_MIPI_DSI_TC358764_DSI2LVDS
 	  using a single LVDS link
 	  and up to WUXGA 1920x1200 18-bit
 	  using a dual LVDS link.
+
+# FIH-SW-MM-VH-MES +[
+config FB_MSM_MIPI_DSI_HIMAX
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
+# FIH-SW-MM-VH-MES +]
+
+config FB_MSM_MIPI_DSI_NOVATEK_FWVGA
+        bool
+        select FB_MSM_MIPI_DSI
+        default n
 
 config FB_MSM_LCDC_ST15_WXGA
     bool
@@ -270,6 +305,60 @@ config FB_MSM_MIPI_NOVATEK_VIDEO_QHD_PT
 config FB_MSM_MIPI_NOVATEK_CMD_QHD_PT
 	bool
 	select FB_MSM_MIPI_DSI_NOVATEK
+	default n
+
+config FB_MSM_MIPI_ILITEK_VIDEO_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_ILITEK
+	default n
+
+config FB_MSM_MIPI_ILITEK_CMD_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_ILITEK
+	default n
+
+# FIH-SW-MM-VH-DISPLAY-00+[
+config FB_MSM_MIPI_RENESAS_VIDEO_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_RENESAS_HVGA
+	default n
+
+config FB_MSM_MIPI_RENESAS_CMD_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_RENESAS_HVGA
+	default n
+# FIH-SW-MM-VH-DISPLAY-00+]
+
+config FB_MSM_MIPI_ORISE_VIDEO_FWVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_ORISE
+	default n
+
+config FB_MSM_MIPI_ORISE_CMD_FWVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_ORISE
+	default n
+
+# FIH-SW-MM-VH-MES+[
+config FB_MSM_MIPI_HIMAX_VIDEO_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_HIMAX
+	default n
+
+config FB_MSM_MIPI_HIMAX_CMD_HVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_HIMAX
+	default n
+# FIH-SW-MM-VH-MES+]
+
+config FB_MSM_MIPI_NOVATEK_VIDEO_FWVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_NOVATEK_FWVGA
+	default n
+
+config FB_MSM_MIPI_NOVATEK_CMD_FWVGA_PT
+	bool
+	select FB_MSM_MIPI_DSI_NOVATEK_FWVGA
 	default n
 
 config FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT
@@ -508,6 +597,14 @@ config FB_MSM_MIPI_NOVATEK_CMD_QHD_PT_PANEL
 	bool "MIPI NOVATEK CMD QHD PT Panel"
 	select FB_MSM_MIPI_NOVATEK_CMD_QHD_PT
 
+config FB_MSM_MIPI_ILITEK_VIDEO_HVGA_PT_PANEL
+	bool "MIPI ILITEK VIDEO HVGA PT Panel"
+	select FB_MSM_MIPI_ILITEK_VIDEO_HVGA_PT
+
+config FB_MSM_MIPI_ILITEK_CMD_HVGA_PT_PANEL
+	bool "MIPI ILITEK CMD HVGA PT Panel"
+	select FB_MSM_MIPI_ILITEK_CMD_HVGA_PT
+
 config FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT_PANEL
 	bool "MIPI Renesas Video FWVGA PT Panel"
 	select FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT
@@ -515,6 +612,42 @@ config FB_MSM_MIPI_RENESAS_VIDEO_FWVGA_PT_PANEL
 config FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT_PANEL
 	bool "MIPI Renesas Command FWVGA PT Panel"
 	select FB_MSM_MIPI_RENESAS_CMD_FWVGA_PT
+
+# FIH-SW-MM-VH-DISPLAY-00+[
+config FB_MSM_MIPI_RENESAS_VIDEO_HVGA_PT_PANEL
+	bool "MIPI Renesas Video HVGA PT Panel"
+	select FB_MSM_MIPI_RENESAS_VIDEO_HVGA_PT
+
+config FB_MSM_MIPI_RENESAS_CMD_HVGA_PT_PANEL
+	bool "MIPI Renesas Command HVGA PT Panel"
+	select FB_MSM_MIPI_RENESAS_CMD_HVGA_PT
+# FIH-SW-MM-VH-DISPLAY-00+]
+
+config FB_MSM_MIPI_ORISE_VIDEO_FWVGA_PT_PANEL
+	bool "MIPI ORISE Video FWVGA PT Panel"
+	select FB_MSM_MIPI_ORISE_VIDEO_FWVGA_PT
+
+config FB_MSM_MIPI_ORISE_CMD_FWVGA_PT_PANEL
+	bool "MIPI ORISE Command FWVGA PT Panel"
+	select FB_MSM_MIPI_ORISE_CMD_FWVGA_PT
+	
+# FIH-SW-MM-VH-MES+[
+config FB_MSM_MIPI_HIMAX_VIDEO_HVGA_PT_PANEL
+	bool "MIPI HIMAX Video HVGA PT Panel"
+	select FB_MSM_MIPI_HIMAX_VIDEO_HVGA_PT
+
+config FB_MSM_MIPI_HIMAX_CMD_HVGA_PT_PANEL
+	bool "MIPI HIMAX Command HVGA PT Panel"
+	select FB_MSM_MIPI_HIMAX_CMD_HVGA_PT
+# FIH-SW-MM-VH-MES+]
+
+config FB_MSM_MIPI_NOVATEK_VIDEO_FWVGA_PT_PANEL
+	bool "MIPI NOVATEK VIDEO FWVGA PT Panel"
+	select FB_MSM_MIPI_NOVATEK_VIDEO_FWVGA_PT
+
+config FB_MSM_MIPI_NOVATEK_CMD_FWVGA_PT_PANEL
+	bool "MIPI NOVATEK CMD FWVGA PT Panel"
+	select FB_MSM_MIPI_NOVATEK_CMD_FWVGA_PT
 
 config FB_MSM_MIPI_CHIMEI_WXGA_PANEL
 	bool "MIPI Chimei WXGA PT Panel"
@@ -729,8 +862,8 @@ endchoice
 
 choice
 	prompt "Default framebuffer color depth"
-	depends on FB_MSM_MDP40 || FB_MSM_MDP31
-	default FB_MSM_DEFAULT_DEPTH_RGBA8888
+	depends on FB_MSM_MDP40 || FB_MSM_MDP31 || FB_MSM_MDP303
+	default FB_MSM_DEFAULT_DEPTH_RGB565
 
 config FB_MSM_DEFAULT_DEPTH_RGB565
 	bool "16 bits per pixel (RGB565)"

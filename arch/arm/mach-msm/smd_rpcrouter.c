@@ -2,6 +2,8 @@
  *
  * Copyright (C) 2007 Google, Inc.
  * Copyright (c) 2007-2011, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2011-2012, Foxconn International Holdings, Ltd. All rights reserved.
+ *
  * Author: San Mehat <san@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -51,6 +53,8 @@
 #include "modem_notifier.h"
 #include "smd_rpc_sym.h"
 #include "smd_private.h"
+
+extern unsigned int debug_rpcmsg_enable;
 
 enum {
 	SMEM_LOG = 1U << 0,
@@ -1556,6 +1560,7 @@ int msm_rpc_write(struct msm_rpc_endpoint *ept, void *buffer, int count)
 
 	if (rq->type == 0) {
 		/* RPC CALL */
+		
 		if (count < (sizeof(uint32_t) * 6)) {
 			printk(KERN_ERR
 			       "rr_write: rejecting runt call packet\n");
@@ -1586,7 +1591,8 @@ int msm_rpc_write(struct msm_rpc_endpoint *ept, void *buffer, int count)
 		reply = get_pend_reply(ept, rq->xid);
 		if (!reply) {
 			printk(KERN_ERR
-			       "rr_write: rejecting, reply not found \n");
+			       "rr_write: rejecting, reply not found, xid = 0x%x\n",
+				be32_to_cpu(rq->xid));
 			return -EINVAL;
 		}
 		hdr.dst_pid = reply->pid;

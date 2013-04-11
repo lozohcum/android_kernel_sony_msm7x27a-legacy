@@ -4,6 +4,7 @@
  *
  * Copyright (C) 2007 Google, Inc.
  * Copyright (c) 2008-2011 Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2011-2012, Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -49,6 +50,7 @@
 #include <mach/msm_migrate_pages.h>
 #endif
 
+#include <mach/socinfo.h>	/* Kernel-JC-suspendsetfreq-00+ */
 #include "smd_private.h"
 #include "smd_rpcrouter.h"
 #include "acpuclock.h"
@@ -63,6 +65,10 @@
 #include "sirc.h"
 #include "pm-boot.h"
 
+/* Kernel-JC-suspendsetfreq-00+[ */
+/*#define CONFIG_SET_MAX_CPUFREQ_BEFORE_SUSPEND*//*Kernel-SC-cpuFreq-none-sync-01-*/
+/*#define CPUFREQ_BEFORE_SUSPEND 600000*/ /*Kernel-SC-suspendsetfreq-00-*/
+/* Kernel-JC-suspendsetfreq-00+] */
 /******************************************************************************
  * Debug Definitions
  *****************************************************************************/
@@ -644,11 +650,30 @@ void msm_pm_set_max_sleep_time(int64_t max_sleep_time_ns)
 		if (msm_pm_max_sleep_time == 0)
 			msm_pm_max_sleep_time = 1;
 	}
-
+    printk(KERN_INFO "%s(): Requested %lld ns Giving %u sclk ticks\n",__func__,
+		max_sleep_time_ns, msm_pm_max_sleep_time); /*FIH-SW3-KERNEL-JC-alarmdebug-00*/
 	MSM_PM_DPRINTK(MSM_PM_DEBUG_SUSPEND, KERN_INFO,
 		"%s(): Requested %lld ns Giving %u sclk ticks\n", __func__,
 		max_sleep_time_ns, msm_pm_max_sleep_time);
 	local_irq_restore(flags);
+/*Kernel-JC-suspendsetfreq-00+[ */
+/*Kernel-SC-cpuFreq-none-sync-01-[*/
+/*#ifdef CONFIG_SET_MAX_CPUFREQ_BEFORE_SUSPEND
+	{
+		int max_freq = 800000;
+
+		if (cpu_is_msm7x27aa()) {
+			max_freq = 1008000;
+		}
+		printk(KERN_INFO "%s(): ready to set %d clock rate\n", __func__ , max_freq);
+		if (acpuclk_set_rate(smp_processor_id(), max_freq, SETRATE_CPUFREQ) < 0) {
+			printk(KERN_ERR "%s(): failed to set %d clock rate\n", __func__, max_freq);
+		}
+	}
+
+#endif*/
+/*Kernel-SC-cpuFreq-none-sync-01-]*/
+/* Kernel-JC-suspendsetfreq-00+] */
 }
 EXPORT_SYMBOL(msm_pm_set_max_sleep_time);
 
@@ -976,6 +1001,7 @@ static int msm_pm_modem_busy(void)
 	return 0;
 }
 
+/*FIH-SW3-KERNEL-JC-Porting-02+] */
 /*
  * Power collapse the Apps processor.  This function executes the handshake
  * protocol with Modem.
@@ -1195,6 +1221,7 @@ static int msm_pm_power_collapse
 	MSM_PM_DEBUG_PRINT_STATE("msm_pm_power_collapse(): WFPI RUN");
 	MSM_PM_DEBUG_PRINT_SLEEP_INFO();
 
+
 	msm_irq_exit_sleep2(msm_pm_smem_data->irq_mask,
 		msm_pm_smem_data->wakeup_reason,
 		msm_pm_smem_data->pending_irqs);
@@ -1398,7 +1425,7 @@ void arch_idle(void)
 
 	if (!atomic_read(&msm_pm_init_done))
 		return;
-
+  
 	latency_qos = pm_qos_request(PM_QOS_CPU_DMA_LATENCY);
 	timer_expiration = msm_timer_enter_idle();
 
@@ -1426,6 +1453,10 @@ void arch_idle(void)
 		allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN] = false;
 		allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE] = false;
 		/* fall through */
+/* FIH-SW3-KERNEL-JC-Porting-02+[ */
+    case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN:
+        allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE] = false;
+/* FIH-SW3-KERNEL-JC-Porting-02+] */
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_SUSPEND:
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
 		break;
@@ -1494,9 +1525,12 @@ void arch_idle(void)
 			timer_expiration, MSM_PM_SLEEP_TICK_LIMIT);
 		if (sleep_delay == 0) /* 0 would mean infinite time */
 			sleep_delay = 1;
-
+        /* FIH-SW3-KERNEL-JC-Porting-02+[ */
 		if (!allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE])
+		{
 			sleep_limit = SLEEP_LIMIT_NO_TCXO_SHUTDOWN;
+		}
+		/* FIH-SW3-KERNEL-JC-Porting-02+] */
 
 #if defined(CONFIG_MSM_MEMORY_LOW_POWER_MODE_IDLE_ACTIVE)
 		sleep_limit |= SLEEP_RESOURCE_MEMORY_BIT1;
@@ -1619,6 +1653,10 @@ static int msm_pm_enter(suspend_state_t state)
 		allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN] = false;
 		allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE] = false;
 		/* fall through */
+/* FIH-SW3-KERNEL-JC-Porting-02+[ */
+    case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN:
+		allow[MSM_PM_SLEEP_MODE_POWER_COLLAPSE] = false;
+/* FIH-SW3-KERNEL-JC-Porting-02+] */
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE_SUSPEND:
 	case MSM_PM_SLEEP_MODE_POWER_COLLAPSE:
 		break;
@@ -1717,25 +1755,45 @@ static struct platform_suspend_ops msm_pm_ops = {
 /******************************************************************************
  * Restart Definitions
  *****************************************************************************/
+/* FIH-SW3-KERNEL-PK-CHARGING-25 +[*/ 
+extern void bq27520_battery_snooze_mode(bool SetSLP);
+/* FIH-SW3-KERNEL-PK-CHARGING-25 +]*/ 
+
 
 static uint32_t restart_reason = 0x776655AA;
 
 static void msm_pm_power_off(void)
 {
+	/* FIH-SW3-KERNEL-PK-CHARGING-25 +[*/ 
+	bq27520_battery_snooze_mode(false);
+	/* FIH-SW3-KERNEL-PK-CHARGING-25 +]*/ 
+
 	msm_rpcrouter_close();
 	msm_proc_comm(PCOM_POWER_DOWN, 0, 0);
 	for (;;)
 		;
 }
 
+/* FIH-SW3-KERNEL-TH-handle_reset-00*[ */
 static void msm_pm_restart(char str, const char *cmd)
 {
+	
+	uint32_t oem_cmd = SMEM_PROC_COMM_OEM_RESET_CHIP_EBOOT;
+	uint32_t smem_response = 0;
+
+    printk(KERN_ERR "msm_pm_restart with reason %08x\n", restart_reason);
+
 	msm_rpcrouter_close();
+
+	msm_proc_comm_oem(PCOM_CUSTOMER_CMD1, &oem_cmd, &smem_response, &restart_reason);
+
 	msm_proc_comm(PCOM_RESET_CHIP, &restart_reason, 0);
 
 	for (;;)
 		;
 }
+/* FIH-SW3-KERNEL-TH-handle_reset-00*] */
+
 
 static int msm_reboot_call
 	(struct notifier_block *this, unsigned long code, void *_cmd)
@@ -1751,6 +1809,14 @@ static int msm_reboot_call
 		} else if (!strncmp(cmd, "oem-", 4)) {
 			unsigned code = simple_strtoul(cmd + 4, 0, 16) & 0xff;
 			restart_reason = 0x6f656d00 | code;
+/* FIH-SW3-KERNEL-TH-handle_reset-00+[ */
+		} else if (!strcmp(cmd, "panic")) {
+			restart_reason = 0x46544443;
+/* FIH-SW3-KERNEL-TH-handle_reset-00+] */
+/* FIH-SW3-KERNEL-EL-add_flag_for_SUT-00+[ */
+		} else if (!strcmp(cmd, "DL")) {
+			restart_reason = 0x27892782;
+/* FIH-SW3-KERNEL-EL-add_flag_for_SUT-00+] */
 		} else {
 			restart_reason = 0x77665501;
 		}

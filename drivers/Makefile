@@ -123,5 +123,6 @@ obj-y				+= platform/
 obj-y				+= ieee802154/
 #common clk code
 obj-y				+= clk/
-
+obj-$(CONFIG_FIH_VIBRATOR_CLASS)	+= vibrators/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
+obj-$(CONFIG_FIH_DEVELOPMENT_TOOL)	+= development_tool/

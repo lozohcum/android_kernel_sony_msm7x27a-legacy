@@ -99,9 +99,9 @@ struct bt_power {
  */
 #define BT_AMP_POLICY_PREFER_AMP       2
 
-#define BT_INFO(fmt, arg...) printk(KERN_INFO "Bluetooth: " fmt "\n" , ## arg)
-#define BT_ERR(fmt, arg...)  printk(KERN_ERR "%s: " fmt "\n" , __func__ , ## arg)
-#define BT_DBG(fmt, arg...)  pr_debug("%s: " fmt "\n" , __func__ , ## arg)
+#define BT_INFO(fmt, arg...) printk(KERN_INFO "Bluetooth: %s: " fmt "\n" , __func__, ## arg)
+#define BT_ERR(fmt, arg...)  printk(KERN_ERR "Bluetooth: %s: " fmt "\n" , __func__ , ## arg)
+#define BT_DBG(fmt, arg...)  pr_debug("Bluetooth: %s: " fmt "\n" , __func__ , ## arg)
 
 /* Connection and socket states */
 enum {

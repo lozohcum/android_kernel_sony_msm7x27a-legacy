@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2007 Google, Inc.
  * Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -44,7 +45,7 @@ char strongly_ordered_mem[PAGE_SIZE*2-4];
 
 void map_page_strongly_ordered(void)
 {
-#if defined(CONFIG_ARCH_MSM7X27) && !defined(CONFIG_ARCH_MSM7X27A)
+#if defined(CONFIG_ARCH_MSM7X27) || defined(CONFIG_ARCH_MSM7X27A)/*MTD-MM-CL-GpuHang_PATCH-00* */
 	long unsigned int phys;
 	struct map_desc map;
 
@@ -67,7 +68,7 @@ EXPORT_SYMBOL(map_page_strongly_ordered);
 
 void write_to_strongly_ordered_memory(void)
 {
-#if defined(CONFIG_ARCH_MSM7X27) && !defined(CONFIG_ARCH_MSM7X27A)
+#if defined(CONFIG_ARCH_MSM7X27) || defined(CONFIG_ARCH_MSM7X27A)/*MTD-MM-CL-GpuHang_PATCH-00* */
 	if (!strongly_ordered_page) {
 		if (!in_interrupt())
 			map_page_strongly_ordered();
@@ -85,7 +86,7 @@ EXPORT_SYMBOL(write_to_strongly_ordered_memory);
 
 void flush_axi_bus_buffer(void)
 {
-#if defined(CONFIG_ARCH_MSM7X27) && !defined(CONFIG_ARCH_MSM7X27A)
+#if defined(CONFIG_ARCH_MSM7X27) || defined(CONFIG_ARCH_MSM7X27A)/*MTD-MM-CL-GpuHang_PATCH-00* */
 	__asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 5" \
 				    : : "r" (0) : "memory");
 	write_to_strongly_ordered_memory();
@@ -273,6 +274,11 @@ static void __init adjust_reserve_sizes(void)
 
 	mt = &reserve_info->memtype_reserve_table[0];
 	for (i = 0; i < MEMTYPE_MAX; i++, mt++) {
+		//MTD-SW3-KERNEL-MP-Fix_ioremap-00+[
+		if (i == MEMTYPE_EBI1_FIH) {
+			continue;
+		}
+		//MTD-SW3-KERNEL-MP-Fix_ioremap-00+]
 		if (mt->flags & MEMTYPE_FLAGS_1M_ALIGN)
 			mt->size = (mt->size + SECTION_SIZE - 1) & SECTION_MASK;
 		if (mt->size > mt->limit) {
@@ -293,8 +299,14 @@ static void __init reserve_memory_for_mempools(void)
 
 	mt = &reserve_info->memtype_reserve_table[0];
 	for (memtype = 0; memtype < MEMTYPE_MAX; memtype++, mt++) {
+		//MTD-SW3-KERNEL-MP-Fix_ioremap-00*[
 		if (mt->flags & MEMTYPE_FLAGS_FIXED || !mt->size)
+		{
+			ret = memblock_remove(mt->start, mt->size);
+			BUG_ON(ret);
 			continue;
+		}
+		//MTD-SW3-KERNEL-MP-Fix_ioremap-00*[
 
 		/* We know we will find memory bank(s) of the proper size
 		 * as we have limited the size of the memory pool for

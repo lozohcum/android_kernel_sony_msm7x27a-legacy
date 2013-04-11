@@ -1,4 +1,5 @@
 /* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -513,6 +514,19 @@ int msm_camera_flash_set_led_state(
 int msm_strobe_flash_init(struct msm_sync *sync, uint32_t sftype);
 int msm_flash_ctrl(struct msm_camera_sensor_info *sdata,
 			struct flash_ctrl_data *flash_info);
+//SW2D2-MM-MC-Camera-BringUpLm3561ForFlashLed-00+{
+#if defined CONFIG_CAMERA_FLASH_LM3561
+int msm_soc_flash_trigger(void);
+/* FIH-SW3-MM-UW-add reduce_red_eye-00+*/
+/*MM-UW-add auto flash 03+*/
+int msm_soc_flash_trigger_off(void);
+/*MM-UW-add auto flash 03-*/
+int msm_soc_torch_trigger(void);
+int msm_soc_get_led_mode(void);
+int msm_soc_torch_flash_off(void);
+/* FIH-SW3-MM-UW-add reduce_red_eye-00-*/
+#endif // End #if defined CONFIG_CAMERA_FLASH_LM3561
+//SW2D2-MM-MC-Camera-BringUpLm3561ForFlashLed-00+}
 #else
 static inline int msm_camera_flash_set_led_state(
 	struct msm_camera_sensor_flash_data *fdata,
@@ -696,6 +710,9 @@ void msm_isp_sync_free(void *ptr);
 
 int msm_cam_clk_enable(struct device *dev, struct msm_cam_clk_info *clk_info,
 		struct clk **clk_ptr, int num_clk, int enable);
+
+int msm_sensor_probe_on(struct device *);
+int msm_sensor_probe_off(struct device *);
 int msm_cam_core_reset(void);
 
 int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,

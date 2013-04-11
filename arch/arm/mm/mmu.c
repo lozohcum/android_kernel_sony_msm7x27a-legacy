@@ -2,6 +2,7 @@
  *  linux/arch/arm/mm/mmu.c
  *
  *  Copyright (C) 1995-2005 Russell King
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -1215,7 +1216,7 @@ void __init paging_init(struct machine_desc *mdesc)
 	empty_zero_page = virt_to_page(zero_page);
 	__flush_dcache_page(NULL, empty_zero_page);
 
-#if defined(CONFIG_ARCH_MSM7X27)
+#if defined(CONFIG_ARCH_MSM7X27) || defined(CONFIG_ARCH_MSM7X27A)/*MTD-MM-CL-GpuHang_PATCH-00* */
 	/*
 	 * ensure that the strongly ordered page is mapped before the
 	 * first call to write_to_strongly_ordered_memory. This page

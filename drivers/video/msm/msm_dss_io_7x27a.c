@@ -1,5 +1,7 @@
 /* Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  *
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -413,6 +415,8 @@ void update_lane_config(struct msm_panel_info *pinfo)
 	pinfo->mipi.data_lane1 = FALSE;
 	pd->pll[10] |= 0x08;
 
+/* FIH-SW3-MM-NC-LCM-00-[+ */
+/*
 	pinfo->yres = 320;
 	pinfo->lcdc.h_back_porch = 15;
 	pinfo->lcdc.h_front_porch = 21;
@@ -420,5 +424,7 @@ void update_lane_config(struct msm_panel_info *pinfo)
 	pinfo->lcdc.v_back_porch = 50;
 	pinfo->lcdc.v_front_porch = 101;
 	pinfo->lcdc.v_pulse_width = 50;
+*/
+/* FIH-SW3-MM-NC-LCM-00-]- */
 }
 #endif

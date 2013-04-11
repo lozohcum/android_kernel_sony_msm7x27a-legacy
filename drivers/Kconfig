@@ -46,6 +46,10 @@ source "drivers/telephony/Kconfig"
 
 source "drivers/input/Kconfig"
 
+source "drivers/vibrators/Kconfig"
+
+source "drivers/development_tool/Kconfig"
+
 source "drivers/char/Kconfig"
 
 source "drivers/i2c/Kconfig"

@@ -367,6 +367,11 @@ static struct pll_freq_tbl_map acpu_freq_tbl_list[] = {
 	PLL_CONFIG(960, 589, 1200, 1008),
 	{ 0, 0, 0, 0, 0 }
 };
+/*FIH-SW3-KERNEL-JC-S1VDDSwitch+[ */
+#ifdef CONFIG_FIH_SEMC_S1
+static int vdderror = 0;
+#endif
+/*FIH-SW3-KERNEL-JC-S1VDDSwitch+] */
 
 #ifdef CONFIG_CPU_FREQ_MSM
 static struct cpufreq_frequency_table freq_table[20];
@@ -461,6 +466,7 @@ static int acpuclk_set_vdd_level(int vdd)
 	* NOTE: v1.0 of 7x27a/7x25a chip doesn't have working
 	* VDD switching support.
 	*/
+	
 	if ((cpu_is_msm7x27a() || cpu_is_msm7x25a()) &&
 		(SOCINFO_VERSION_MINOR(socinfo_get_version()) < 1))
 		return 0;
@@ -474,8 +480,20 @@ static int acpuclk_set_vdd_level(int vdd)
 	mb();
 	udelay(62);
 	if ((readl_relaxed(A11S_VDD_SVS_PLEVEL_ADDR) & 0x7) != vdd) {
-		pr_err("VDD set failed\n");
-		return -EIO;
+    /*FIH-SW3-KERNEL-JC-S1VDDSwitch+[ */
+#ifdef CONFIG_FIH_SEMC_S1
+        vdderror++;
+        if(vdderror > 50)
+        {
+		pr_err("ACPU VDD set failed\n");
+        vdderror = 0;
+        }
+        return 0;
+#else
+     	pr_err("VDD set failed\n");
+        return -EIO;
+#endif
+    /*FIH-SW3-KERNEL-JC-S1VDDSwitch+] */
 	}
 
 	pr_debug("VDD switched\n");
@@ -975,10 +993,27 @@ static struct acpuclk_data acpuclk_7627_data = {
 	.switch_time_us = 50,
 };
 
+
+/* FIH-SW3-KERNEL-HC-S1_Clk_Patch-00+[ */
+#ifdef CONFIG_FIH_SEMC_S1
+void appsboot_acpu_clock_init(void)
+{
+	writel_relaxed(0x00642123, A11S_CLK_CNTL_ADDR);
+	writel_relaxed(0x00000ff8, A11S_CLK_SEL_ADDR);
+}
+#endif
+/* FIH-SW3-KERNEL-HC-S1_Clk_Patch-00+] */
+
 static int __init acpuclk_7627_init(struct acpuclk_soc_data *soc_data)
 {
 	pr_info("%s()\n", __func__);
-
+	
+	/* FIH-SW3-KERNEL-HC-S1_Clk_Patch-00+[ */
+	#ifdef CONFIG_FIH_SEMC_S1
+	appsboot_acpu_clock_init();
+	#endif
+	/* FIH-SW3-KERNEL-HC-S1_Clk_Patch-00+] */
+	
 	drv_state.ebi1_clk = clk_get(NULL, "ebi1_acpu_clk");
 	BUG_ON(IS_ERR(drv_state.ebi1_clk));
 

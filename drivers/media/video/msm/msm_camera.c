@@ -1,4 +1,5 @@
 /* Copyright (c) 2009-2012, Code Aurora Forum. All rights reserved.
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1024,9 +1025,11 @@ static int msm_control(struct msm_control_device *ctrl_pmsm,
 		goto end;
 	}
 	msm_queue_drain(&ctrl_pmsm->ctrl_q, list_control);
+       //MTD-SW3-MM-UW-camframe timeout-01+{
 	qcmd_resp = __msm_control(sync,
 				  &ctrl_pmsm->ctrl_q,
-				  qcmd, msecs_to_jiffies(10000));
+				  qcmd, msecs_to_jiffies(10000));//FIH-SW-MM-MC-ImplementSensorReSetForMt9v115-00*
+       //MTD-SW3-MM-UW-camframe timeout-01-}
 
 	/* ownership of qcmd will be transfered to event queue */
 	qcmd = NULL;

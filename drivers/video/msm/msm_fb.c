@@ -5,6 +5,8 @@
  * Copyright (C) 2007 Google Incorporated
  * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  *
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
+ *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -49,7 +51,9 @@
 #include "mdp4.h"
 
 #ifdef CONFIG_FB_MSM_LOGO
-#define INIT_IMAGE_FILE "/initlogo.rle"
+
+#define INIT_IMAGE_FILE "/logo.rle" /* FIH-SW2-MM-KW-CDF_logo-00+ */
+
 extern int load_565rle_image(char *filename);
 #endif
 
@@ -89,12 +93,20 @@ u32 msm_fb_msg_level = 7;
 /* Setting mddi_msg_level to 8 prints out ALL messages */
 u32 mddi_msg_level = 5;
 
+/* FIH-SW-MM-VH-DISPLAY-20* */
+static int isDim = 0;
+
+/* FIH-SW-MM-VH-DISPLAY-09*[ */
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+struct semaphore bkl_sem;  /* FIH-SW3-MM-NC-LCM-00 */
+#endif
 extern int32 mdp_block_power_cnt[MDP_MAX_BLOCK];
 extern unsigned long mdp_timer_duration;
 
 static int msm_fb_register(struct msm_fb_data_type *mfd);
 static int msm_fb_open(struct fb_info *info, int user);
 static int msm_fb_release(struct fb_info *info, int user);
+/* FIH-SW-MM-VH-DISPLAY-09*] */
 static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 			      struct fb_info *info);
 static int msm_fb_stop_sw_refresher(struct msm_fb_data_type *mfd);
@@ -117,6 +129,13 @@ static int msm_fb_mmap(struct fb_info *info, struct vm_area_struct * vma);
 int msm_fb_debugfs_file_index;
 struct dentry *msm_fb_debugfs_root;
 struct dentry *msm_fb_debugfs_file[MSM_FB_MAX_DBGFS];
+
+/* FIH-SW-MM-VH-DISPLAY-09*[ */
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+/* FIH-SW-MM-VH-DISPLAY-20* */
+static int unset_bl_level = 0;
+#endif
+/* FIH-SW-MM-VH-DISPLAY-09*] */
 
 DEFINE_MUTEX(msm_fb_notify_update_sem);
 void msmfb_no_update_notify_timer_cb(unsigned long data)
@@ -188,8 +207,240 @@ static struct led_classdev backlight_led = {
 };
 #endif
 
+/* FIH-SW3-MM-NC-LCM-03-[+ */
+#ifdef CONFIG_FIH_FB_MSM_POWER_OFF_CHARGING_ANIMATION
+/* FIH-SW-MM-CL-COLOR_DEPTH-00-[ * */
+/* FIH-SW3-MM-NC-LCM-09-[+ */
+#define HIBYTE(x) (((x) >> 8) & 0xFF)
+#define LOBYTE(x) ((x) & 0xFF)
+
+/* FIH-SW-MM-VH-DISPLAY-05*[ */
+#ifdef CONFIG_FB_MSM_LOGO
+int draw_logo(struct fb_info *fbi)
+{
+	int retVal = 0;
+	printk(KERN_ERR "[DISPLAY] %s\n", __func__);
+/* FIH-SW2-MM-KW-RGBA8888-00+{ */
+#if defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888)
+	fih_load_565rle_image_to_RGBA8888(INIT_IMAGE_FILE);
+#else
+	fih_load_565rle_image(INIT_IMAGE_FILE);  /* Flip buffer *//*MTD-MM-CL-DrawLogo-00* */
+#endif
+/* FIH-SW2-MM-KW-RGBA8888-00-} */
+	retVal = msm_fb_pan_display(&fbi->var, fbi);
+
+	return retVal;
+}
+#endif
+
+/* FIH-SW-MM-VH-DISPLAY-16+[ */
+static ssize_t fb_dim_read(struct device *dev,
+        struct device_attribute *attr, char *buf)
+{
+	/* FIH-SW-MM-VH-DISPLAY-20- */
+	/* int isDim = 0; */
+	return snprintf(buf, PAGE_SIZE, "%d\n", isDim);
+}
+static ssize_t fb_dim_write(struct device *dev,
+        struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = NULL;
+	struct msm_fb_panel_data *pdata = NULL;
+	int last_bl_level = 0;
+	/* FIH-SW-MM-VH-DISPLAY-20- */
+	/* int isDim = 0; */
+
+	mfd = (struct msm_fb_data_type *)fbi->par;
+	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+
+	sscanf(buf, "%3d", &isDim);
+	
+	printk(KERN_ERR "[DISPLAY] isDim = %d\n", isDim);
+	
+	if(isDim == 1) {
+		last_bl_level = mfd->bl_level;
+		mfd->bl_level = 1;
+		pdata->set_backlight(mfd);
+		mfd->bl_level = last_bl_level;
+	}	else if(isDim == 2){
+		last_bl_level = mfd->bl_level;
+		mfd->bl_level = 0;
+		pdata->set_backlight(mfd);
+		mfd->bl_level = last_bl_level;
+	}
+	
+	return size;
+}
+static DEVICE_ATTR(dim, 0644, fb_dim_read, fb_dim_write);
+/* FIH-SW-MM-VH-DISPLAY-16+] */
+
+static ssize_t display_show_battery(struct device *dev,
+        struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+	/* FIH-SW-MM-VH-DISPLAY-18*[ */
+	struct msm_fb_panel_data *pdata = NULL;
+	int last_bl_level = 0;
+	/* FIH-SW-MM-VH-DISPLAY-18*] */
+	int battery_state = 0;
+	char rlefile[50];/*MTD-MM-CL-DrawLogo-00+ */
+
+	printk(KERN_ERR "[DISPLAY] Enter %s\n", __func__);
+
+/* FIH-SW3-MM-NC-COVERITY_CID#16190-01-[+ */
+	/* Use %3d to limit size to avoid overflow */
+	sscanf(buf, "%3d", &battery_state);
+/* FIH-SW3-MM-NC-COVERITY_CID#16190-01-]- */
+	sprintf(rlefile,"/system/etc/chgani/ca0%d.rle", battery_state + 1 );/*MTD-MM-CL-DrawLogo-00+ */
+	switch (battery_state)
+	{
+/*MTD-MM-CL-DrawLogo-00*[*/
+	case BATTERY_EMPTY:
+	case BATTERY_LEVEL_01:
+	case BATTERY_LEVEL_02:
+	case BATTERY_LEVEL_03:
+	case BATTERY_LEVEL_04:
+	case BATTERY_LEVEL_05:
+	case BATTERY_FULL:
+/* FIH-SW2-MM-KW-RGBA8888-00+{ */
+#if defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888)
+		fih_load_565rle_image_to_RGBA8888(rlefile);
+#else
+		fih_load_565rle_image(rlefile);
+#endif
+/* FIH-SW2-MM-KW-RGBA8888-00-} */
+		msm_fb_pan_display(&fbi->var, fbi);
+		break;
+/*MTD-MM-CL-DrawLogo-00*]*/
+	case BATTERY_DISP_ON:
+		msm_fb_blank_sub(FB_BLANK_UNBLANK, fbi, mfd->op_enable);
+		break;
+	case BATTERY_DISP_OFF:
+/* FIH-SW-MM-VH-DISPLAY-18*[ */
+		last_bl_level = mfd->bl_level;
+		mfd->bl_level = 0;
+		pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+		pdata->set_backlight(mfd);
+		mfd->bl_level = last_bl_level;
+
+		memset(fbi->screen_base, 0x00,
+				fbi->var.xres * fbi->var.yres * fbi->var.bits_per_pixel / 8);
+		msm_fb_blank_sub(FB_BLANK_POWERDOWN, fbi, mfd->op_enable);
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+		down(&bkl_sem);
+		unset_bl_level = mfd->panel_info.bl_max;
+		up(&bkl_sem);
+#endif
+/* FIH-SW-MM-VH-DISPLAY-18*] */
+		break;
+
+	default:
+		printk(KERN_ERR "[DISPLAY] Invalid battery state\n");
+		break;
+	}
+
+	return size;
+}
+
+static DEVICE_ATTR(display_battery, 0644, NULL, display_show_battery);
+#endif /* CONFIG_FIH_FB_MSM_POWER_OFF_CHARGING_ANIMATION */
+/* FIH-SW-MM-VH-DISPLAY-09*] */
+#ifdef CONFIG_FIH_FTM
+static ssize_t panel_power_control(struct device *dev,
+        struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+    struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)fbi->par;
+    struct msm_fb_panel_data *pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+    int panel_power_on;
+
+    sscanf(buf, "%d", &panel_power_on);
+
+    if (panel_power_on)
+        pdata->on(mfd->pdev);
+    else
+        pdata->off(mfd->pdev);
+
+    return size;
+}
+
+static DEVICE_ATTR(panel_control, 0644, NULL, panel_power_control);
+/*
+ * Define in android/kernel/include/linux/device.h:
+ *
+ */
+ #endif /* CONFIG_FIH_FTM */
+/* FIH-SW3-MM-NC-LCM-03-[+ */
+
 static struct msm_fb_platform_data *msm_fb_pdata;
 unsigned char hdmi_prim_display;
+
+/* FIH-SW-MM-VH-DISPLAY-42*[ */
+#if (defined(CONFIG_FIH_SW_DISPLAY_LCM_ID_CHECK) || defined(CONFIG_FIH_SW_DISPLAY_AUO_LCM_HEALTHY_CHECK))
+enum {
+	LCM_ID_DA_MES_CMI_DP = 0x0A,
+	LCM_ID_DA_MES_AUO_0B = 0x0B,
+	LCM_ID_DA_MES_AUO_0D = 0x0D,
+	LCM_ID_DA_MES_CMI_TP = 0x0C,
+	LCM_ID_DA_JLO_AUO = 0x42,
+	LCM_ID_DA_JLO_CMI = 0x43,
+	LCM_ID_DA_TAP_CMI = 0x54,
+};
+int msm_fb_check_lcm_healthy(struct msm_fb_data_type *mfd, struct fb_info *fbi)
+{
+	int retVal = 0;
+	
+	int duration = 0;
+	struct timespec cur_time = {0, 0};
+	static struct timespec pre_time = {0, 0};
+
+	struct msm_fb_panel_data *pdata =
+		(struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+
+#if defined(CONFIG_FIH_SW_DISPLAY_LCM_ID_CHECK)
+	if(mfd->panel_info.lcm_model == (__u32)LCM_ID_DA_TAP_CMI){
+		cur_time = current_kernel_time();
+		duration = cur_time.tv_sec - pre_time.tv_sec;
+
+		if (duration < 2)
+			return 0;
+		else
+			pre_time = cur_time;
+
+		down(&mfd->sem);
+		if(pdata->get_id != NULL) {
+			retVal = pdata->get_id(mfd);
+		}
+		up(&mfd->sem);
+
+	}
+#endif
+#if defined(CONFIG_FIH_SW_DISPLAY_AUO_LCM_HEALTHY_CHECK)
+	if((mfd->panel_info.lcm_model == (__u32)LCM_ID_DA_MES_AUO_0B) ||
+		(mfd->panel_info.lcm_model == (__u32)LCM_ID_DA_MES_AUO_0D))
+	{
+			cur_time = current_kernel_time();
+			duration = cur_time.tv_sec - pre_time.tv_sec;
+			
+			if (duration < 2)
+				return 0;
+			else
+				pre_time = cur_time;
+
+			down(&mfd->sem);
+			if(pdata->get_healthy != NULL) {
+				retVal = pdata->get_healthy(mfd);
+			}
+			up(&mfd->sem);
+	}
+#endif
+
+	return retVal;
+}
+#endif
+/* FIH-SW-MM-VH-DISPLAY-42*] */
 
 int msm_fb_detect_client(const char *name)
 {
@@ -331,7 +582,10 @@ static int msm_fb_probe(struct platform_device *pdev)
 		fbram_size =
 			pdev->resource[0].end - pdev->resource[0].start + 1;
 		fbram_phys = (char *)pdev->resource[0].start;
-		fbram = __va(fbram_phys);
+/* FIH-SW3-MM-NC-LCM-06 */
+/*		fbram = __va(fbram_phys); */
+		fbram = ioremap((unsigned long)fbram_phys, fbram_size);
+/* FIH-SW3-MM-NC-LCM-06 */
 
 		if (!fbram) {
 			printk(KERN_ERR "fbram ioremap failed!\n");
@@ -357,15 +611,25 @@ static int msm_fb_probe(struct platform_device *pdev)
 
 	if (pdev_list_cnt >= MSM_FB_MAX_DEV_LIST)
 		return -ENOMEM;
-
 	mfd->panel_info.frame_count = 0;
-	mfd->bl_level = 0;
+/* FIH-SW-MM-VH-DISPLAY-09*[ */
 #ifdef CONFIG_FB_MSM_OVERLAY
 	mfd->overlay_play_enable = 1;
 #endif
 	rc = msm_fb_register(mfd);
 	if (rc)
 		return rc;
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+	down(&bkl_sem);
+	mfd->bl_level = mfd->panel_info.bl_max;
+	unset_bl_level = mfd->bl_level;
+	up(&bkl_sem);
+#else
+	mfd->bl_level = mfd->panel_info.bl_max;
+	msm_fb_set_backlight(mfd, mfd->bl_level);
+#endif
+/* FIH-SW-MM-VH-DISPLAY-09*] */
+
 	err = pm_runtime_set_active(mfd->fbi->dev);
 	if (err < 0)
 		printk(KERN_ERR "pm_runtime: fail to set active.\n");
@@ -384,6 +648,7 @@ static int msm_fb_probe(struct platform_device *pdev)
 
 	pdev_list[pdev_list_cnt++] = pdev;
 	msm_fb_create_sysfs(pdev);
+    
 	return 0;
 }
 
@@ -531,14 +796,19 @@ static int msm_fb_suspend_sub(struct msm_fb_data_type *mfd)
 			}
 		}
 	}
-
 	return 0;
 }
 
+/* FIH-SW-MM-VH-DISPLAY-15*[ */
 #ifdef CONFIG_PM
 static int msm_fb_resume_sub(struct msm_fb_data_type *mfd)
 {
 	int ret = 0;
+/* FIH-SW-MM-VH-DISPLAY-40* */
+#ifdef CONFIG_FIH_SW_DISPLAY_CMI_LCM_HEALTHY_CHECK
+	int retry = 0;
+#endif
+
 	struct msm_fb_panel_data *pdata = NULL;
 
 	if ((!mfd) || (mfd->key != MFD_KEY))
@@ -558,17 +828,35 @@ static int msm_fb_resume_sub(struct msm_fb_data_type *mfd)
 		ret =
 		     msm_fb_blank_sub(FB_BLANK_UNBLANK, mfd->fbi,
 				      mfd->op_enable);
+/* FIH-SW-MM-VH-DISPLAY-40* */
+#ifdef CONFIG_FIH_SW_DISPLAY_CMI_LCM_HEALTHY_CHECK
+/* FIH-SW-MM-VH-DISPLAY-17* */
+		while((retry < 5) && (ret != 0)) {
+			printk(KERN_ERR "msm_fb_open: can't turn on display! retry = %d\n", retry);
+				
+			mfd->panel_power_on = TRUE;
+			msm_fb_blank_sub(FB_BLANK_POWERDOWN, mfd->fbi, mfd->op_enable);
+			mdelay(100);
+			ret = msm_fb_blank_sub(FB_BLANK_UNBLANK, mfd->fbi, mfd->op_enable);
+			retry++;
+		}
+#else
 		if (ret)
 			MSM_FB_INFO("msm_fb_resume: can't turn on display!\n");
+#endif
+
 	} else {
 		if (pdata->power_ctrl)
 			pdata->power_ctrl(TRUE);
 	}
 
+	/* FIH-SW-MM-VH-DISPLAY-16+ */
+	unset_bl_level = 1;
+	
 	return ret;
 }
 #endif
-
+/* FIH-SW-MM-VH-DISPLAY-15*] */
 #if defined(CONFIG_PM) && !defined(CONFIG_HAS_EARLYSUSPEND)
 static int msm_fb_resume(struct platform_device *pdev)
 {
@@ -667,7 +955,8 @@ static struct platform_driver msm_fb_driver = {
 		   },
 };
 
-#if defined(CONFIG_HAS_EARLYSUSPEND) && defined(CONFIG_FB_MSM_MDP303)
+/* FIH-SW2-MM-KW-set_to_black-00+{ */
+#if 0 //defined(CONFIG_HAS_EARLYSUSPEND) && defined(CONFIG_FB_MSM_MDP303)
 static void memset32_io(u32 __iomem *_ptr, u32 val, size_t count)
 {
 	count >>= 2;
@@ -675,13 +964,15 @@ static void memset32_io(u32 __iomem *_ptr, u32 val, size_t count)
 		writel(val, _ptr++);
 }
 #endif
+/* FIH-SW2-MM-KW-set_to_black-00-} */
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 static void msmfb_early_suspend(struct early_suspend *h)
 {
 	struct msm_fb_data_type *mfd = container_of(h, struct msm_fb_data_type,
 						    early_suspend);
-#if defined(CONFIG_FB_MSM_MDP303)
+/* FIH-SW2-MM-KW-set_to_black-00+{ */
+#if 0 //defined(CONFIG_FB_MSM_MDP303)
 	/*
 	* For MDP with overlay, set framebuffer with black pixels
 	* to show black screen on HDMI.
@@ -697,6 +988,8 @@ static void msmfb_early_suspend(struct early_suspend *h)
 		break;
 	}
 #endif
+    memset(mfd->fbi->screen_base, 0x0, mfd->fbi->fix.smem_len);
+/* FIH-SW2-MM-KW-set_to_black-00-} */
 	msm_fb_suspend_sub(mfd);
 }
 
@@ -708,33 +1001,44 @@ static void msmfb_early_resume(struct early_suspend *h)
 }
 #endif
 
-static int unset_bl_level, bl_updated;
-static int bl_level_old;
-
+/* FIH-SW-MM-VH-DISPLAY-07*[ */
 void msm_fb_set_backlight(struct msm_fb_data_type *mfd, __u32 bkl_lvl)
 {
 	struct msm_fb_panel_data *pdata;
 
-	if (!mfd->panel_power_on || !bl_updated) {
+	printk("[DISPLAY] %s: bkl_lvl = %d\r\n", __func__, bkl_lvl);
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+	down(&bkl_sem);
+
+	if (!mfd->panel_power_on || (unset_bl_level !=0)) {
 		unset_bl_level = bkl_lvl;
+		up(&bkl_sem);
 		return;
-	} else {
-		unset_bl_level = 0;
 	}
 
 	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
 
 	if ((pdata) && (pdata->set_backlight)) {
-		down(&mfd->sem);
-		if (bl_level_old == bkl_lvl) {
-			up(&mfd->sem);
+		if (mfd->bl_level == bkl_lvl) {
+			up(&bkl_sem);
 			return;
 		}
 		mfd->bl_level = bkl_lvl;
 		pdata->set_backlight(mfd);
-		bl_level_old = mfd->bl_level;
-		up(&mfd->sem);
 	}
+	up(&bkl_sem);
+#else
+	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+
+	if ((pdata) && (pdata->set_backlight)) {
+		if (mfd->bl_level == bkl_lvl) {
+			return;
+		}
+		mfd->bl_level = bkl_lvl;
+		pdata->set_backlight(mfd);
+	}
+
+#endif
 }
 
 static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
@@ -756,7 +1060,9 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 	switch (blank_mode) {
 	case FB_BLANK_UNBLANK:
 		if (!mfd->panel_power_on) {
+#ifdef CONFIG_FB_MSM_LCDC
 			msleep(16);
+#endif
 			ret = pdata->on(mfd->pdev);
 			if (ret == 0) {
 				mfd->panel_power_on = TRUE;
@@ -780,20 +1086,33 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 	case FB_BLANK_NORMAL:
 	case FB_BLANK_POWERDOWN:
 	default:
+/* FIH-SW-MM-VH-DISPLAY-16*[ */
 		if (mfd->panel_power_on) {
-			int curr_pwr_state;
-
+			int curr_pwr_state, last_bl_level;
+			
+			last_bl_level = mfd->bl_level;
+			mfd->bl_level = 0;
+			pdata->set_backlight(mfd);
+			mfd->bl_level = last_bl_level;
+		
+/* FIH-SW-MM-VH-DISPLAY-16*] */
 			mfd->op_enable = FALSE;
 			curr_pwr_state = mfd->panel_power_on;
 			mfd->panel_power_on = FALSE;
-			bl_updated = 0;
-
-			msleep(16);
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+			down(&bkl_sem);
+			unset_bl_level = -1;
+			up(&bkl_sem);
+#endif
+#ifdef CONFIG_FB_MSM_LCDC
+            msleep(16);
+#endif
 			ret = pdata->off(mfd->pdev);
 			if (ret)
 				mfd->panel_power_on = curr_pwr_state;
 
 			mfd->op_enable = TRUE;
+			isDim = 0;
 		} else {
 			if (pdata->power_ctrl)
 				pdata->power_ctrl(FALSE);
@@ -803,6 +1122,7 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 
 	return ret;
 }
+/* FIH-SW-MM-VH-DISPLAY-07*] */
 
 int calc_fb_offset(struct msm_fb_data_type *mfd, struct fb_info *fbi, int bpp)
 {
@@ -839,6 +1159,7 @@ static void msm_fb_fillrect(struct fb_info *info,
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
 
+/* FIH-SW-MM-VH-DISPLAY-09+[ */
 	cfb_fillrect(info, rect);
 	if (!mfd->hw_refresh && (info->var.yoffset == 0) &&
 		!mfd->sw_currently_refreshing) {
@@ -858,6 +1179,8 @@ static void msm_fb_copyarea(struct fb_info *info,
 			    const struct fb_copyarea *area)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+	
+
 
 	cfb_copyarea(info, area);
 	if (!mfd->hw_refresh && (info->var.yoffset == 0) &&
@@ -922,6 +1245,7 @@ static int msm_fb_mmap(struct fb_info *info, struct vm_area_struct * vma)
 	u32 len = PAGE_ALIGN((start & ~PAGE_MASK) + info->fix.smem_len);
 	unsigned long off = vma->vm_pgoff << PAGE_SHIFT;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
+
 	if (off >= len) {
 		/* memory mapped io */
 		off -= len;
@@ -1179,17 +1503,22 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	var->pixclock = mfd->panel_info.clk_rate;
 	mfd->var_pixclock = var->pixclock;
 
+/* FIH-SW3-MM-NC-LCM-10-[+ */
+	if (panel_info->width > 0 && panel_info->height > 0) {
+		var->width = panel_info->width;
+		var->height = panel_info->height;
+	}
+/* FIH-SW3-MM-NC-LCM-10-]- */
 	var->xres = panel_info->xres;
 	var->yres = panel_info->yres;
 	var->xres_virtual = panel_info->xres;
 	var->yres_virtual = panel_info->yres * mfd->fb_page +
 		((PAGE_SIZE - remainder)/fix->line_length) * mfd->fb_page;
 	var->bits_per_pixel = bpp * 8;	/* FrameBuffer color depth */
+/* FIH-SW-MM-VH-DISPLAY-23*[ */
 	if (mfd->dest == DISPLAY_LCD) {
-		if (panel_info->type == MDDI_PANEL && panel_info->mddi.is_type1)
-			var->reserved[4] = panel_info->lcd.refx100 / (100 * 2);
-		else
-			var->reserved[4] = panel_info->lcd.refx100 / 100;
+			var->reserved[4] = panel_info->mipi.frame_rate;
+/* FIH-SW-MM-VH-DISPLAY-23*] */
 	} else {
 		if (panel_info->type == MIPI_VIDEO_PANEL) {
 			var->reserved[4] = panel_info->mipi.frame_rate;
@@ -1236,7 +1565,11 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	init_completion(&mfd->pan_comp);
 	init_completion(&mfd->refresher_comp);
 	sema_init(&mfd->sem, 1);
-
+/* FIH-SW-MM-VH-DISPLAY-09*[ */
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+	sema_init(&bkl_sem, 1);
+#endif
+/* FIH-SW-MM-VH-DISPLAY-09*] */
 	init_timer(&mfd->msmfb_no_update_notify_timer);
 	mfd->msmfb_no_update_notify_timer.function =
 			msmfb_no_update_notify_timer_cb;
@@ -1300,9 +1633,35 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 	MSM_FB_INFO
 	    ("FrameBuffer[%d] %dx%d size=%d bytes is registered successfully!\n",
 	     mfd->index, fbi->var.xres, fbi->var.yres, fbi->fix.smem_len);
+/* FIH-SW3-MM-NC-LCM-03-[+ */
+#ifdef CONFIG_FIH_FB_MSM_POWER_OFF_CHARGING_ANIMATION
+	/* File node: /sys/class/graphics/fb?/display_battery */
+	ret = device_create_file(fbi->dev, &dev_attr_display_battery);
+	if (ret) {
+		printk(KERN_ERR "[DISPLAY] %s: create dev_attr_display_battery failed\n",
+				__func__);
+	}
+#endif
 
+#ifdef CONFIG_FIH_FTM
+	/* File node: /sys/class/graphics/fb?/panel_control */
+	ret = device_create_file(fbi->dev, &dev_attr_panel_control);
+	if (ret) {
+		printk(KERN_ERR "[DISPLAY] %s: create dev_attr_panel_control failed\n",
+				__func__);
+	}
+#endif
+/* FIH-SW3-MM-NC-LCM-03-]- */
+
+/* FIH-SW-MM-VH-DISPLAY-16+[ */
+	ret = device_create_file(fbi->dev, &dev_attr_dim);
+	if (ret) {
+		printk(KERN_ERR "[DISPLAY] %s: create dev_attr_dim failed\n",
+				__func__);
+	}
+/* FIH-SW-MM-VH-DISPLAY-16+] */
 #ifdef CONFIG_FB_MSM_LOGO
-	if (!load_565rle_image(INIT_IMAGE_FILE)) ;	/* Flip buffer */
+	//if (!load_565rle_image(INIT_IMAGE_FILE)) ;	/* Flip buffer *//*MTD-MM-CL-DrawLogo-00- */
 #endif
 	ret = 0;
 
@@ -1444,11 +1803,15 @@ static int msm_fb_register(struct msm_fb_data_type *mfd)
 
 	return ret;
 }
-
+/* FIH-SW-MM-VH-DISPLAY-11*[ */
 static int msm_fb_open(struct fb_info *info, int user)
 {
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-	int result;
+	int result = 0;
+/* FIH-SW-MM-VH-DISPLAY-40* */
+#ifdef CONFIG_FIH_SW_DISPLAY_CMI_LCM_HEALTHY_CHECK
+	int retry = 0;
+#endif
 
 	result = pm_runtime_get_sync(info->dev);
 
@@ -1463,16 +1826,34 @@ static int msm_fb_open(struct fb_info *info, int user)
 
 	if (!mfd->ref_cnt) {
 		mdp_set_dma_pan_info(info, NULL, TRUE);
-
-		if (msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable)) {
+		result = msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable);
+/* FIH-SW-MM-VH-DISPLAY-40* */
+#ifdef CONFIG_FIH_SW_DISPLAY_CMI_LCM_HEALTHY_CHECK
+/* FIH-SW-MM-VH-DISPLAY-17* */
+		while((retry < 5) && (result != 0)) {
+			printk(KERN_ERR "msm_fb_open: can't turn on display! retry = %d\n", retry);
+		
+			mfd->panel_power_on = TRUE;
+			msm_fb_blank_sub(FB_BLANK_POWERDOWN, info, mfd->op_enable);
+			mdelay(100);
+			result = msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable);
+			retry++;
+		}
+#else
+		if(result != 0) {
 			printk(KERN_ERR "msm_fb_open: can't turn on display!\n");
 			return -1;
 		}
-	}
+#endif
 
+	}
+	
+	printk("[DISPLAY]%s: result = %d\r\n", __func__, result);
 	mfd->ref_cnt++;
+/* FIH-SW-MM-VH-DISPLAY-12* */
 	return 0;
 }
+/* FIH-SW-MM-VH-DISPLAY-11*] */
 
 static int msm_fb_release(struct fb_info *info, int user)
 {
@@ -1501,6 +1882,7 @@ static int msm_fb_release(struct fb_info *info, int user)
 }
 
 DEFINE_SEMAPHORE(msm_fb_pan_sem);
+/* FIH-SW-MM-VH-DISPLAY-09+[ */
 
 static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 			      struct fb_info *info)
@@ -1508,18 +1890,23 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 	struct mdp_dirty_region dirty;
 	struct mdp_dirty_region *dirtyPtr = NULL;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-	struct msm_fb_panel_data *pdata;
-
-	if (info->node != 0 || mfd->cont_splash_done)	/* primary */
-		if ((!mfd->op_enable) || (!mfd->panel_power_on))
+	
+#if (defined(CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE) || defined(CONFIG_FIH_SW_DISPLAY_LCM_ID_CHECK)|| defined(CONFIG_FIH_SW_DISPLAY_CMI_LCM_HEALTHY_CHECK)|| defined(CONFIG_FIH_SW_DISPLAY_AUO_LCM_HEALTHY_CHECK))
+	struct msm_fb_panel_data *pdata = NULL;
+#endif
+/* FIH-SW-MM-VH-DISPLAY-20*[ */
+	if (info->node != 0 || mfd->cont_splash_done) {	/* primary */
+		if ((!mfd->op_enable) || (!mfd->panel_power_on) || (isDim == 2))
 			return -EPERM;
+	}
 
+
+/* FIH-SW-MM-VH-DISPLAY-20*] */
 	if (var->xoffset > (info->var.xres_virtual - info->var.xres))
 		return -EINVAL;
 
 	if (var->yoffset > (info->var.yres_virtual - info->var.yres))
 		return -EINVAL;
-
 	if (info->fix.xpanstep)
 		info->var.xoffset =
 		    (var->xoffset / info->fix.xpanstep) * info->fix.xpanstep;
@@ -1585,22 +1972,89 @@ static int msm_fb_pan_display(struct fb_var_screeninfo *var,
 	mdp_dma_pan_update(info);
 	up(&msm_fb_pan_sem);
 
-	if (unset_bl_level && !bl_updated) {
-		pdata = (struct msm_fb_panel_data *)mfd->pdev->
-			dev.platform_data;
-		if ((pdata) && (pdata->set_backlight)) {
-			down(&mfd->sem);
-			mfd->bl_level = unset_bl_level;
-			pdata->set_backlight(mfd);
-			bl_level_old = unset_bl_level;
-			up(&mfd->sem);
-			bl_updated = 1;
+#ifdef CONFIG_FIH_SW_DISPLAY_BACKLIGHT_CMD_QUEUE
+		down(&bkl_sem);
+	
+		if (unset_bl_level > 0) {
+			printk(KERN_ERR "[DISPLAY]%s: unset_bl_level = %d\r\n", __func__, unset_bl_level);
+			pdata = (struct msm_fb_panel_data *)mfd->pdev->
+				dev.platform_data;
+
+/* FIH-SW-MM-VH-DISPLAY-21+[ */
+#ifdef CONFIG_FIH_SW_DISPLAY_LCM_DIMMING
+			if ((pdata) && (pdata->set_dimming)) {
+				pdata->set_dimming(1);
+			}
+#endif
+/* FIH-SW-MM-VH-DISPLAY-21+] */
+
+			if ((pdata) && (pdata->set_backlight)) {
+/* FIH-SW-MM-VH-DISPLAY-16-[ */
+				/* mfd->bl_level = unset_bl_level; */
+/* FIH-SW-MM-VH-DISPLAY-16-] */
+				mdelay(50);
+				pdata->set_backlight(mfd);
+			}
+			unset_bl_level = 0;
 		}
-	}
+		up(&bkl_sem);
+#endif
+
+/* FIH-SW-MM-VH-DISPLAY-40*[ */
+#if defined(CONFIG_FIH_SW_DISPLAY_LCM_ID_CHECK) || defined(CONFIG_FIH_SW_DISPLAY_AUO_LCM_HEALTHY_CHECK)
+		if (mfd->bl_level > 0){
+			if (msm_fb_check_lcm_healthy(mfd, info) < 0) {
+				printk(KERN_ERR "[DISPLAY] %s, panel crash detected at pan display, reset panel\n", __func__);
+/* FIH-SW-MM-VH-DISPLAY-40*] */
+				msm_fb_blank_sub(FB_BLANK_POWERDOWN, info, mfd->op_enable);
+				mdelay(5);
+				msm_fb_blank_sub(FB_BLANK_UNBLANK, info, mfd->op_enable);
+				mdelay(50);
+
+				down(&msm_fb_pan_sem);
+				mdp_set_dma_pan_info(info, dirtyPtr,
+				             (var->activate == FB_ACTIVATE_VBL));
+				mdp_dma_pan_update(info);
+				up(&msm_fb_pan_sem);
+
+				mdelay(50);
+				pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
+				pdata->set_backlight(mfd);
+				mdelay(50);
+				down(&msm_fb_pan_sem);
+				mdp_set_dma_pan_info(info, dirtyPtr,
+							(var->activate == FB_ACTIVATE_VBL));
+				mdp_dma_pan_update(info);
+				up(&msm_fb_pan_sem);
+				mdelay(50);
+				pdata->set_backlight(mfd);
+				mdelay(50);
+				down(&msm_fb_pan_sem);
+				mdp_set_dma_pan_info(info, dirtyPtr,
+							(var->activate == FB_ACTIVATE_VBL));
+				mdp_dma_pan_update(info);
+				up(&msm_fb_pan_sem);
+				mdelay(50);
+				pdata->set_backlight(mfd);
+				mdelay(50);
+
+				down(&msm_fb_pan_sem);
+				mdp_set_dma_pan_info(info, dirtyPtr,
+									(var->activate == FB_ACTIVATE_VBL));
+				mdp_dma_pan_update(info);
+				up(&msm_fb_pan_sem);
+				mdelay(50);
+			pdata->set_backlight(mfd);
+
+
+			}
+		}
+#endif
 
 	++mfd->panel_info.frame_count;
 	return 0;
 }
+/* FIH-SW-MM-VH-DISPLAY-09*] */
 
 static int msm_fb_check_var(struct fb_var_screeninfo *var, struct fb_info *info)
 {
@@ -1738,6 +2192,9 @@ static int msm_fb_set_par(struct fb_info *info)
 			mfd->fb_imgType = MDP_RGBA_8888;
 		break;
 
+	/* FIH-SW-MM-VH-DISPLAY-09+ */
+	printk("[DISPLAY] msm_fb_set_par mfd->fb_imgType=%d\r\n", mfd->fb_imgType);
+	
 	default:
 		return -EINVAL;
 	}
@@ -1963,6 +2420,26 @@ int mdp_blit(struct fb_info *info, struct mdp_blit_req *req)
 	}
 	if (unlikely(req->dst_rect.h == 0 || req->dst_rect.w == 0))
 		return 0;
+
+/* FIH-SW-MM-VH-DISPLAY-37+[ */
+#if 0
+	if(unlikely((req->dst_rect.w > info->var.xres) || (req->dst_rect.h > info->var.yres)))
+	{
+		printk(KERN_ERR "%s: ERROR: Illegal BLIT size %d x %d!\r\n", __func__, req->dst_rect.w, req->dst_rect.h);
+		
+		pr_err("\n %s():%d: src: w = %u, h= %u, f = %u, offset = 0x%x, mem_id %u", 
+		__func__,__LINE__, req->src.width, req->src.height, req->src.format, req->src.offset, req->src.memory_id); 
+		pr_err("\n %s():%d: dst: w = %u, h= %u, f = %u, offset = 0x%x, mem_id %u", 
+		__func__,__LINE__, req->dst.width, req->dst.height, req->dst.format, req->dst.offset, req->dst.memory_id); 
+		pr_err("\n %s():%d: src_rect: x = %u, y = %u, w = %u, h = %u", 
+		__func__,__LINE__, req->src_rect.x, req->src_rect.y, req->src_rect.w, req->src_rect.h); 
+		pr_err("\n %s():%d: dst_rect: x = %u, y = %u, w = %u, h = %u", 
+		__func__,__LINE__, req->dst_rect.x, req->dst_rect.y, req->dst_rect.w, req->dst_rect.h); 
+		pr_err("\n alpha 0x%x, flags 0x%x, transp_mask 0x%x", req->alpha, req->flags, req->transp_mask); 
+		return -EINVAL;
+	}
+#endif
+/* FIH-SW-MM-VH-DISPLAY-37+] */
 
 #if defined CONFIG_FB_MSM_MDP31
 	/* MDP width split workaround */
@@ -2669,7 +3146,6 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	int	ret;
 	struct msmfb_overlay_data req;
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)info->par;
-	struct msm_fb_panel_data *pdata;
 
 	if (mfd->overlay_play_enable == 0)	/* nothing to do */
 		return 0;
@@ -2700,7 +3176,8 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 	}
 
 	ret = mdp4_overlay_play(info, &req);
-
+/* FIH-SW-MM-VH-DISPLAY-25*[ */
+#if 0
 	if (unset_bl_level && !bl_updated) {
 		pdata = (struct msm_fb_panel_data *)mfd->pdev->
 			dev.platform_data;
@@ -2713,6 +3190,9 @@ static int msmfb_overlay_play(struct fb_info *info, unsigned long *argp)
 			bl_updated = 1;
 		}
 	}
+#endif
+/* FIH-SW-MM-VH-DISPLAY-25*] */
+	ret = mdp4_overlay_play(info, &req);
 
 	return ret;
 }

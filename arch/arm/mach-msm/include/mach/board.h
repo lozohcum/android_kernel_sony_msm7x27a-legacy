@@ -3,6 +3,7 @@
  * Copyright (C) 2007 Google, Inc.
  * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -220,9 +221,20 @@ struct msm_actuator_info {
 
 struct msm_camera_sensor_info {
 	const char *sensor_name;
+	const char *vreg_1v8; /* FIH-SW3-MM-SL-ModifyGPIODefine-00* */
 	int sensor_reset_enable;
 	int sensor_reset;
 	int sensor_pwd;
+    //FIH-SW-MM-MC-ImplementSensorReSetForMt9v115-00+{
+	int sensor_f_reset;
+	int sensor_f_pwd;
+    //FIH-SW-MM-MC-ImplementSensorReSetForMt9v115-00+}
+	/* FIH-SW3-MM-SL-ModifyGPIODefine-01*{ */
+	int vreg_v1p2;
+	int vreg_v1p8;
+	const char *vreg_af_power;
+	int vreg_v2p8;  /*vreg_2v8*/
+	/* FIH-SW3-MM-SL-ModifyGPIODefine-01*} */
 	int vcm_pwd;
 	int vcm_enable;
 	int mclk;
@@ -371,9 +383,15 @@ struct mddi_platform_data {
 struct mipi_dsi_platform_data {
 	int vsync_gpio;
 	int (*dsi_power_save)(int on);
-	int (*dsi_client_reset)(void);
+	/* FIH-SW-MM-VH-DISPLAY-07* */
+	int (*dsi_client_reset)(int hold);
 	int (*get_lane_config)(void);
 	int target_type;
+/* FIH-SW-MM-VH-DISPLAY-12*[ */
+#ifdef CONFIG_FIH_SW_DISPLAY_DSI_BKL_EN
+	int (*dsi_bkl_en)(int on);  /* FIH-SW2-MM-NC-BKL_EN-00 */
+#endif
+/* FIH-SW-MM-VH-DISPLAY-12*] */
 };
 
 enum mipi_dsi_3d_ctrl {

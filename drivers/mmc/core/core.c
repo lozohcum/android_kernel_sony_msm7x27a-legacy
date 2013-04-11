@@ -4,6 +4,7 @@
  *  Copyright (C) 2003-2004 Russell King, All Rights Reserved.
  *  SD support Copyright (C) 2004 Ian Molton, All Rights Reserved.
  *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
+ * Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
  *  MMCv4 support Copyright (C) 2006 Philip Langdale, All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -106,12 +107,12 @@ void mmc_request_done(struct mmc_host *host, struct mmc_request *mrq)
 	}
 
 	if (err && cmd->retries && !mmc_card_removed(host->card)) {
-		pr_debug("%s: req failed (CMD%u): %d, retrying...\n",
-			mmc_hostname(host), cmd->opcode, err);
-
-		cmd->retries--;
-		cmd->error = 0;
-		host->ops->request(host, mrq);
+		/*
+		 * Request starter must handle retries - see
+		 * mmc_wait_for_req().
+		 */
+		if (mrq->done)
+			mrq->done(mrq);
 	} else {
 		led_trigger_event(host->led, LED_OFF);
 
@@ -250,7 +251,21 @@ void mmc_wait_for_req(struct mmc_host *host, struct mmc_request *mrq)
 
 	mmc_start_request(host, mrq);
 
-	wait_for_completion_io(&complete);
+	while (1) {
+		struct mmc_command *cmd;
+
+		wait_for_completion_io(&complete);
+
+		cmd = mrq->cmd;
+		if (!cmd->error || !cmd->retries)
+			break;
+
+		pr_debug("%s: req failed (CMD%u): %d, retrying...\n",
+			 mmc_hostname(host), cmd->opcode, cmd->error);
+		cmd->retries--;
+		cmd->error = 0;
+		host->ops->request(host, mrq);
+	}
 }
 
 EXPORT_SYMBOL(mmc_wait_for_req);
@@ -1693,18 +1708,36 @@ int _mmc_detect_card_removed(struct mmc_host *host)
 int mmc_detect_card_removed(struct mmc_host *host)
 {
 	struct mmc_card *card = host->card;
+	int ret;
 
 	WARN_ON(!host->claimed);
+
+	if (!card)
+		return 1;
+
+	ret = mmc_card_removed(card);
 	/*
 	 * The card will be considered unchanged unless we have been asked to
 	 * detect a change or host requires polling to provide card detection.
 	 */
-	if (card && !host->detect_change && !(host->caps & MMC_CAP_NEEDS_POLL))
-		return mmc_card_removed(card);
+	if (!host->detect_change && !(host->caps & MMC_CAP_NEEDS_POLL) &&
+	    !(host->caps2 & MMC_CAP2_DETECT_ON_ERR))
+		return ret;
 
 	host->detect_change = 0;
+	if (!ret) {
+		ret = _mmc_detect_card_removed(host);
+		if (ret && (host->caps2 & MMC_CAP2_DETECT_ON_ERR)) {
+			/*
+			 * Schedule a detect work as soon as possible to let a
+			 * rescan handle the card removal.
+			 */
+			cancel_delayed_work(&host->detect);
+			mmc_detect_change(host, 0);
+		}
+	}
 
-	return _mmc_detect_card_removed(host);
+	return ret;
 }
 EXPORT_SYMBOL(mmc_detect_card_removed);
 
@@ -1714,8 +1747,11 @@ void mmc_rescan(struct work_struct *work)
 		container_of(work, struct mmc_host, detect.work);
 	bool extend_wakelock = false;
 
-	if (host->rescan_disable)
+    printk(KERN_INFO "%s:%s rescan\n", __func__, mmc_hostname(host));
+	if (host->rescan_disable) {
+        printk("%s %d [THSU]:: rescan disabled rutern directly\n", __func__, __LINE__);
 		return;
+    }
 
 	mmc_bus_get(host);
 
@@ -1724,8 +1760,10 @@ void mmc_rescan(struct work_struct *work)
 	 * still present
 	 */
 	if (host->bus_ops && host->bus_ops->detect && !host->bus_dead
-	    && !(host->caps & MMC_CAP_NONREMOVABLE))
+	    && !(host->caps & MMC_CAP_NONREMOVABLE)) {
+        printk("%s %d [THSU]:: bus_ops detect\n", __func__, __LINE__);
 		host->bus_ops->detect(host);
+    }
 
 	/* If the card was removed the bus will be marked
 	 * as dead - extend the wakelock so userspace
@@ -1744,6 +1782,7 @@ void mmc_rescan(struct work_struct *work)
 
 	/* if there still is a card present, stop here */
 	if (host->bus_ops != NULL) {
+        printk("%s %d [THSU]:: bus_ops != NULL\n", __func__, __LINE__);
 		mmc_bus_put(host);
 		goto out;
 	}
@@ -1754,8 +1793,10 @@ void mmc_rescan(struct work_struct *work)
 	 */
 	mmc_bus_put(host);
 
-	if (host->ops->get_cd && host->ops->get_cd(host) == 0)
+	if (host->ops->get_cd && host->ops->get_cd(host) == 0) {
+        printk("%s %d [THSU]:: ops->get_cd\n", __func__, __LINE__);
 		goto out;
+    }
 
 	mmc_claim_host(host);
 	if (!mmc_rescan_try_freq(host, host->f_min))
@@ -1768,6 +1809,7 @@ void mmc_rescan(struct work_struct *work)
 	else
 		wake_unlock(&host->detect_wake_lock);
 	if (host->caps & MMC_CAP_NEEDS_POLL) {
+        printk("%s %d [THSU]:: mmc_schedule_delayed_work\n", __func__, __LINE__);
 		wake_lock(&host->detect_wake_lock);
 		mmc_schedule_delayed_work(&host->detect, HZ);
 	}
@@ -2044,14 +2086,19 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 		if (!host->bus_ops || host->bus_ops->suspend)
 			break;
 
-		mmc_claim_host(host);
+        /* FIH-CONN-EC-WiFiSuspendResume-01+[ */
+        if (!host->card || (host->card && (host->card->type != MMC_TYPE_SDIO))) {
+            mmc_claim_host(host);
 
-		if (host->bus_ops->remove)
-			host->bus_ops->remove(host);
+            if (host->bus_ops->remove)
+                host->bus_ops->remove(host);
 
-		mmc_detach_bus(host);
-		mmc_release_host(host);
-		host->pm_flags = 0;
+            mmc_detach_bus(host);
+            mmc_release_host(host);
+            host->pm_flags = 0;
+        }
+        /* FIH-CONN-EC-WiFiSuspendResume-01+] */
+
 		break;
 
 	case PM_POST_SUSPEND:
@@ -2065,7 +2112,12 @@ int mmc_pm_notify(struct notifier_block *notify_block,
 		}
 		host->rescan_disable = 0;
 		spin_unlock_irqrestore(&host->lock, flags);
-		mmc_detect_change(host, 0);
+        /* FIH-CONN-EC-WiFiSuspendResume-01+[ */
+        if (!host->card || (host->card && (host->card->type != MMC_TYPE_SDIO))) {
+		    mmc_detect_change(host, 0);
+        }
+        /* FIH-CONN-EC-WiFiSuspendResume-01+] */
+
 
 	}
 

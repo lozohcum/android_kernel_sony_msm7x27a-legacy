@@ -2,6 +2,7 @@
  *
  * Copyright (C) 2007 Google, Inc.
  * Copyright (c) 2008-2012, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2011-2012, Foxconn International Holdings, Ltd. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -113,6 +114,55 @@ struct smsm_state_info {
 	uint32_t intr_mask_set;
 	uint32_t intr_mask_clear;
 };
+
+/* MTD-BSP-VT-RECOVERY-00+[ */
+struct smem_boot_info
+{
+      unsigned int apps_boot_reason;
+};
+/* MTD-BSP-VT-RECOVERY-00+] */
+
+//MTD-BSP-REXER-SMEM-00+[
+/* FIH-SW-KERNEL-HC-TCXO_SD_DURING_DISPLAY_ON-01* */
+struct smem_oem_info
+{
+    unsigned int hw_id;
+    unsigned int keypad_info;
+    unsigned int power_on_cause;
+    /*Add SD RAM dump feature*/
+    unsigned int network_mode;
+    unsigned int oemsbl_mode; 
+    char   flash_name[32];
+    char   oem_mob_rev[16];
+    unsigned int  progress;
+    unsigned int  msg_counter;
+    unsigned int  dram_info;
+    char   amss_version[32];
+    unsigned int not_mpm_reason;
+    unsigned int mao_int_pendding;
+    unsigned int tcxo_off_time;
+    unsigned int tcxo_off_count;
+    unsigned int curr_not_okts_mask0;
+    unsigned int curr_not_okts_mask1;
+    unsigned int powercollapse_time;
+    unsigned int against_clock[4];
+    unsigned int acquired_resources;
+    unsigned int tcxo_sd_during_display_on;
+};
+
+#define PHASE_ID_SHIFT_MASK 8
+#define BAND_ID_SHIFT_MASK 16
+#define SIM_ID_SHIFT_MASK 24  
+
+static struct smem_oem_info oem_info = {0};
+unsigned long fih_hw_id = 0;
+static unsigned int fih_product_id = 0;
+static unsigned int fih_product_phase = 0;
+static unsigned int fih_band_id = 0;
+static unsigned int fih_sim_type = 0; 
+static char fih_amss_version[30] = {0};
+unsigned int fih_power_on_cause; 
+//MTD-BSP-REXER-SMEM-00+]
 
 struct interrupt_config_item {
 	/* must be initialized */
@@ -2783,6 +2833,21 @@ int smsm_state_cb_deregister(uint32_t smsm_entry, uint32_t mask,
 }
 EXPORT_SYMBOL(smsm_state_cb_deregister);
 
+/* MTD-BSP-VT-RECOVERY-00+[ */
+unsigned int get_boot_info(void)
+{
+       struct smem_boot_info boot_info = {0};
+       struct smem_boot_info *p_boot_info = smem_alloc(SMEM_APPS_BOOT_MODE, sizeof(boot_info));
+       if (p_boot_info==NULL) {
+           return -1;
+       }
+       memcpy(&boot_info, p_boot_info, sizeof(boot_info));
+
+       printk(KERN_INFO "get_boot_info = 0x%x\r\n",boot_info.apps_boot_reason);
+       return boot_info.apps_boot_reason;
+}
+EXPORT_SYMBOL(get_boot_info);
+/* MTD-BSP-VT-RECOVERY-00+] */
 
 int smd_core_init(void)
 {
@@ -3105,6 +3170,107 @@ static int restart_notifier_cb(struct notifier_block *this,
 
 	return NOTIFY_DONE;
 }
+
+//MTD-BSP-REXER-SMEM-00+[
+void fih_get_oem_info(void)
+{
+  #ifdef CONFIG_FIH_SEMC_S1
+  int count = 0;
+  #endif
+  struct smem_oem_info *fih_smem_info = smem_alloc(SMEM_ID_VENDOR0, sizeof(oem_info));
+  if (fih_smem_info==NULL)
+  {
+    return;
+  }
+  memcpy(&oem_info, fih_smem_info, sizeof(oem_info));
+
+  fih_hw_id = oem_info.hw_id;
+  
+  /*MTD-BSP-KC-FTM_HWID_ADC_MV_01+[*/
+  #ifdef CONFIG_FIH_SEMC_S1
+	while ( fih_hw_id == 0x44495778 )
+	{
+		count++;
+		if ( count%100 == 0 )
+		{
+			printk(KERN_ERR "FIH kernel - Waiting for fih_hw_id.\r\n");
+		}
+		memcpy(&oem_info, fih_smem_info, sizeof(oem_info));
+		fih_hw_id = oem_info.hw_id;
+		mdelay(10);
+		if ( count > 1000 )
+		{ 
+			printk(KERN_ERR "FIH kernel - Timeout for fih_hw_id.\r\n");
+			break;
+		}
+	}
+  #endif
+  /*MTD-BSP-KC-FTM_HWID_ADC_MV_01+]*/
+
+  
+  printk(KERN_ERR "FIH kernel - fih_hw_id = 0x%lx\r\n",fih_hw_id);
+
+  //get product id
+  fih_product_id = fih_hw_id&0xff;
+  printk(KERN_ERR "FIH kernel - fih_product_id = %d \r\n",fih_product_id);
+
+  //get product phase
+  fih_product_phase = (fih_hw_id>>PHASE_ID_SHIFT_MASK)&0xff;
+  printk(KERN_ERR "FIH kernel - fih_product_phase = %d \r\n",fih_product_phase);
+
+  //get band id
+  fih_band_id = (fih_hw_id>>BAND_ID_SHIFT_MASK)&0xff;
+  printk(KERN_ERR "FIH kernel - fih_band_id = %d \r\n",fih_band_id);
+
+  fih_sim_type = (fih_hw_id>>SIM_ID_SHIFT_MASK)&0x3;
+  printk(KERN_ERR "FIH kernel - fih_sim_type = %d \r\n",fih_sim_type);
+	
+  //get AMSS Version
+  snprintf(fih_amss_version, sizeof(fih_amss_version), oem_info.amss_version);
+  printk(KERN_ERR "FIH kernel - fih_amss_version = %s \r\n",fih_amss_version);
+	
+  /* show power on cause */
+  printk(KERN_EMERG "FIH kernel - power on cause = 0x%08x \r\n", oem_info.power_on_cause);
+  fih_power_on_cause = oem_info.power_on_cause; 	
+} /*fih_get_oem_info*/
+EXPORT_SYMBOL(fih_get_oem_info);
+
+unsigned int fih_get_product_id(void)
+{
+	return fih_product_id;
+} 
+EXPORT_SYMBOL(fih_get_product_id);
+
+unsigned int fih_get_product_phase(void)
+{
+	return fih_product_phase;
+} 
+EXPORT_SYMBOL(fih_get_product_phase);
+
+unsigned int fih_get_band_id(void)
+{
+	return fih_band_id;
+} 
+EXPORT_SYMBOL(fih_get_band_id);
+
+unsigned int fih_get_sim_id(void)
+{
+	return fih_sim_type;
+} 
+EXPORT_SYMBOL(fih_get_sim_id);
+
+char *fih_get_amss_version(void)
+{
+	return fih_amss_version;
+} 
+EXPORT_SYMBOL(fih_get_amss_version);
+unsigned int fih_get_power_on_cause(void)
+{
+	return fih_power_on_cause;
+}
+EXPORT_SYMBOL(fih_get_power_on_cause);
+module_param_named(poweron_cause, fih_power_on_cause, int, S_IRUGO);
+//MTD-BSP-REXER-SMEM-00+]
 
 static __init int modem_restart_late_init(void)
 {

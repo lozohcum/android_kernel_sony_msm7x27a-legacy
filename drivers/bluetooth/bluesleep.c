@@ -16,6 +16,7 @@
 
    Copyright (C) 2006-2007 - Motorola
    Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
+   Copyright(C) 2011-2012 Foxconn International Holdings, Ltd. All rights reserved.
 
    Date         Author           Comment
    -----------  --------------   --------------------------------
@@ -65,7 +66,11 @@
 struct bluesleep_info {
 	unsigned host_wake;
 	unsigned ext_wake;
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	int host_wake_irq;
+#else
 	unsigned host_wake_irq;
+#endif
 	struct uart_port *uport;
 };
 
@@ -81,8 +86,8 @@ DECLARE_DELAYED_WORK(sleep_workqueue, bluesleep_sleep_work);
 #define bluesleep_rx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
 #define bluesleep_tx_idle()     schedule_delayed_work(&sleep_workqueue, 0)
 
-/* 1 second timeout */
-#define TX_TIMER_INTERVAL	1
+/* 2 second timeout */
+#define TX_TIMER_INTERVAL	2
 
 /* state variable names and bit positions */
 #define BT_PROTO	0x01
@@ -108,6 +113,7 @@ static int bluesleep_hci_event(struct notifier_block *this,
  * Global variables
  */
 
+int g_uart_power = 1;//MTD-Conn-JC-BluesleepFix-00++
 /** Global state flags */
 static unsigned long flags;
 
@@ -133,6 +139,8 @@ struct proc_dir_entry *bluetooth_dir, *sleep_dir;
 
 static void hsuart_power(int on)
 {
+	g_uart_power = on; //MTD-Conn-JC-BluesleepFix-00++
+
 	if (on) {
 		msm_hs_request_clock_on(bsi->uport);
 		msm_hs_set_mctrl(bsi->uport, TIOCM_RTS);
@@ -148,19 +156,29 @@ static void hsuart_power(int on)
  */
 static inline int bluesleep_can_sleep(void)
 {
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	return (gpio_get_value(bsi->ext_wake)==0) &&
+		(gpio_get_value(bsi->host_wake)==0) &&
+		(bsi->uport != NULL);
+#else	
 	/* check if MSM_WAKE_BT_GPIO and BT_WAKE_MSM_GPIO are both deasserted */
 	return gpio_get_value(bsi->ext_wake) &&
 		gpio_get_value(bsi->host_wake) &&
 		(bsi->uport != NULL);
+#endif
 }
 
 void bluesleep_sleep_wakeup(void)
 {
 	if (test_bit(BT_ASLEEP, &flags)) {
-		BT_DBG("waking up...");
+		BT_INFO("waking up...");
 		/* Start the timer */
 		mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL * HZ));
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+		gpio_set_value(bsi->ext_wake, 1);
+#else
 		gpio_set_value(bsi->ext_wake, 0);
+#endif
 		clear_bit(BT_ASLEEP, &flags);
 		/*Activating UART */
 		hsuart_power(1);
@@ -181,7 +199,7 @@ static void bluesleep_sleep_work(struct work_struct *work)
 		}
 
 		if (msm_hs_tx_empty(bsi->uport)) {
-			BT_DBG("going to sleep...");
+			BT_INFO("going to sleep...");
 			set_bit(BT_ASLEEP, &flags);
 			/*Deactivating UART */
 			hsuart_power(0);
@@ -228,9 +246,19 @@ static void bluesleep_outgoing_data(void)
 	set_bit(BT_TXDATA, &flags);
 
 	/* if the tx side is sleeping... */
-	if (gpio_get_value(bsi->ext_wake)) {
-
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	if (gpio_get_value(bsi->ext_wake) == 0)
+#else
+	if (gpio_get_value(bsi->ext_wake))
+#endif
+	{
 		BT_DBG("tx was sleeping");
+		//MTD-Conn-JC-BluesleepFix-00+[
+		if (g_uart_power) {
+			BT_INFO("SET_BIT: BT_ASLEEP\n");
+			set_bit(BT_ASLEEP, &flags);
+		}
+		//MTD-Conn-JC-BluesleepFix-00+]
 		bluesleep_sleep_wakeup();
 	}
 
@@ -290,7 +318,11 @@ static void bluesleep_tx_timer_expire(unsigned long data)
 	/* were we silent during the last timeout? */
 	if (!test_bit(BT_TXDATA, &flags)) {
 		BT_DBG("Tx has been idle");
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+		gpio_set_value(bsi->ext_wake, 0);
+#else
 		gpio_set_value(bsi->ext_wake, 1);
+#endif
 		bluesleep_tx_idle();
 	} else {
 		BT_DBG("Tx data during last period");
@@ -345,10 +377,18 @@ static int bluesleep_start(void)
 	mod_timer(&tx_timer, jiffies + (TX_TIMER_INTERVAL*HZ));
 
 	/* assert BT_WAKE */
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	gpio_set_value(bsi->ext_wake, 1);
+	gpio_direction_input(bsi->host_wake);
+	retval = request_irq(bsi->host_wake_irq, bluesleep_hostwake_isr,
+				IRQF_DISABLED | IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
+				"bluetooth hostwake", NULL);
+#else
 	gpio_set_value(bsi->ext_wake, 0);
 	retval = request_irq(bsi->host_wake_irq, bluesleep_hostwake_isr,
 				IRQF_DISABLED | IRQF_TRIGGER_FALLING,
 				"bluetooth hostwake", NULL);
+#endif
 	if (retval  < 0) {
 		BT_ERR("Couldn't acquire BT_HOST_WAKE IRQ");
 		goto fail;
@@ -385,7 +425,11 @@ static void bluesleep_stop(void)
 	}
 
 	/* assert BT_WAKE */
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	gpio_set_value(bsi->ext_wake, 1);
+#else
 	gpio_set_value(bsi->ext_wake, 0);
+#endif
 	del_timer(&tx_timer);
 	clear_bit(BT_PROTO, &flags);
 
@@ -590,11 +634,19 @@ static int __init bluesleep_probe(struct platform_device *pdev)
 	if (ret)
 		goto free_bt_host_wake;
 	/* assert bt wake */
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	ret = gpio_direction_output(bsi->ext_wake, 1);
+#else
 	ret = gpio_direction_output(bsi->ext_wake, 0);
+#endif
 	if (ret)
 		goto free_bt_ext_wake;
 
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	bsi->host_wake_irq = MSM_GPIO_TO_INT(bsi->host_wake);
+#else
 	bsi->host_wake_irq = platform_get_irq_byname(pdev, "host_wake");
+#endif
 	if (bsi->host_wake_irq < 0) {
 		BT_ERR("couldn't find host_wake irq\n");
 		ret = -ENODEV;
@@ -616,7 +668,11 @@ free_bsi:
 static int bluesleep_remove(struct platform_device *pdev)
 {
 	/* assert bt wake */
+#if defined(CONFIG_BROADCOM_BCM4330_BTFM) && defined(CONFIG_BROADCOM_BCM4330_BTFM_SLEEP)
+	gpio_set_value(bsi->ext_wake, 1);
+#else
 	gpio_set_value(bsi->ext_wake, 0);
+#endif
 	if (test_bit(BT_PROTO, &flags)) {
 		if (disable_irq_wake(bsi->host_wake_irq))
 			BT_ERR("Couldn't disable hostwake IRQ wakeup mode \n");
