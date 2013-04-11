@@ -204,7 +204,6 @@ static struct led_classdev backlight_led = {
 	.brightness	= MAX_BACKLIGHT_BRIGHTNESS,
 	.brightness_set	= msm_fb_set_bl_brightness,
 };
-#endif
 
 /* FIH-SW3-MM-NC-LCM-03-[+ */
 #ifdef CONFIG_FIH_FB_MSM_POWER_OFF_CHARGING_ANIMATION
