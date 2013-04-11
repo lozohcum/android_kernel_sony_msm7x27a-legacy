@@ -323,7 +323,7 @@ static int usb_get_max_power(struct usb_info *ui)
 		return USB_WALLCHARGER_CHG_CURRENT;
 
 	if (suspended || !configured)
-		return 0;
+		return 500;
 
 	return bmaxpow;
 }
