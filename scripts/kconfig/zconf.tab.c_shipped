@@ -203,7 +203,7 @@ typedef union YYSTYPE
 
 
 /* Include zconf.hash.c here so it can see the token constants. */
-#include "zconf.hash.c"
+#include "zconf.hash.c_shipped"
 
 
 
@@ -2496,7 +2496,7 @@ void zconfdump(FILE *out)
 	}
 }
 
-#include "lex.zconf.c"
+#include "lex.zconf.c_shipped"
 #include "util.c"
 #include "confdata.c"
 #include "expr.c"
